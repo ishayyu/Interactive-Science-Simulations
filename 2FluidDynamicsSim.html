@@ -1,0 +1,605 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>2D Fluid Dynamics Simulator (fixed airfoil)</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            font-family: Verdana, sans-serif;
+            background: #111;
+            color: white;
+        }
+
+        canvas {
+            display: block;
+        }
+
+        #controls {
+            position: fixed;
+            top: 10px;
+            right: 10px;
+            background: rgba(0,0,0,0.7);
+            padding: 12px;
+            border-radius: 10px;
+            font-size: 14px;
+            max-width: 260px;
+            line-height: 1.5em;
+        }
+
+            #controls h3 {
+                margin-top: 0;
+                text-align: center;
+                text-decoration: underline;
+            }
+
+        .button {
+            background-color: #606060;
+            border: none;
+            color: white;
+            padding: 8px 10px;
+            font-size: 14px;
+            margin: 4px 2px;
+            cursor: pointer;
+        }
+
+        .slider {
+            -webkit-appearance: none;
+            width: 80px;
+            height: 6px;
+            border-radius: 5px;
+            background: #d3d3d3;
+            outline: none;
+            opacity: 0.7;
+            transition: opacity .2s;
+        }
+
+        #results {
+            position: fixed;
+            bottom: 10px;
+            right: 10px;
+            background: rgba(0,0,0,0.7);
+            padding: 10px;
+            border-radius: 10px;
+            font-size: 14px;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Scene buttons -->
+    <button class="button" onclick="setupScene(1)">Wind Tunnel</button>
+    <button class="button" onclick="setupScene(3)">Hires Tunnel</button>
+    <button class="button" onclick="setupScene(0)">Tank</button>
+    <button class="button" onclick="setupScene(2)">Paint</button>
+    <input type="checkbox" id="streamButton" onclick="scene.showStreamlines = !scene.showStreamlines">Streamlines
+    <input type="checkbox" id="velocityButton" onclick="scene.showVelocities = !scene.showVelocities">Velocities
+    <input type="checkbox" id="pressureButton" onclick="scene.showPressure = !scene.showPressure;"> Pressure
+    <input type="checkbox" id="smokeButton" onclick="scene.showSmoke = !scene.showSmoke;" checked>Smoke
+    <input type="checkbox" id="overrelaxButton" onclick="scene.overRelaxation = scene.overRelaxation == 1.0 ? 1.9 : 1.0" checked>Overrelax
+    <br>
+
+    <!-- Shape buttons -->
+    <button class="button" onclick="setShape('circle')">Circle</button>
+    <button class="button" onclick="setShape('rect')">Rectangle</button>
+    <button class="button" onclick="setShape('triangle')">Triangle</button>
+    <button class="button" onclick="setShape('airfoil')">Airfoil</button>
+
+    <!-- Flow speed control -->
+    <p style="color:white; margin:8px;">
+        Flow Speed:
+        <input type="range" min="0" max="5" step="0.1" value="2" class="slider" id="flowSlider">
+        <span id="flowValue">2.0</span>
+    </p>
+
+    <canvas id="myCanvas" style="border:2px solid"></canvas>
+
+    <div id="controls">
+        <h3>Controls</h3>
+        <p><code>Mouse Drag</code>: Move obstacle</p>
+        <p><code>[</code> / <code>]</code>: Rotate obstacle</p>
+        <p><code>P</code>: Pause/Play</p>
+        <p><code>M</code>: Step forward 1 frame</p>
+        <p><code>O</code>: Toggle obstacle visibility</p>
+        <p><code>V</code>: Toggle velocity vectors</p>
+        <p><code>S</code>: Toggle smoke/streamlines</p>
+
+        <h3>Obstacle Shape</h3>
+        <label style="color:white;"><input type="radio" name="shape" value="circle" checked> Circle</label><br>
+        <label style="color:white;"><input type="radio" name="shape" value="rect"> Rectangle</label><br>
+        <label style="color:white;"><input type="radio" name="shape" value="airfoil"> Airfoil</label>
+        <hr>
+        <label style="color:white; font-size:13px;">
+            Airfoil camber (m): <input id="camberInput" type="number" step="0.01" min="0" max="0.2" value="0.02" style="width:60px">
+        </label><br>
+        <label style="color:white; font-size:13px;">
+            Camber position (p): <input id="camberPosInput" type="number" step="0.01" min="0.1" max="0.9" value="0.4" style="width:60px">
+        </label><br>
+        <label style="color:white; font-size:13px;">
+            Thickness (t): <input id="thicknessInput" type="number" step="0.01" min="0.01" max="0.3" value="0.12" style="width:60px">
+        </label>
+    </div>
+
+    <div id="results">
+        <h3 style="margin-top:0; font-size:16px; text-align:center; text-decoration:underline;">Results</h3>
+        <p id="frameCount">Frame: 0</p>
+        <p id="avgSpeed">Avg Speed: 0.00</p>
+        <p id="dragForce">Drag Force: 0.00</p>
+    </div>
+
+    <script>
+/* -------------------- Canvas & coords -------------------- */
+var canvas = document.getElementById("myCanvas");
+var c = canvas.getContext("2d");
+function resizeCanvas() {
+            canvas.width = window.innerWidth - 20;
+            canvas.height = window.innerHeight - 100;
+            canvas.focus();
+            // update scaling
+            cScale = canvas.height / simHeight;
+            simWidth = canvas.width / cScale;
+}
+var simHeight = 1.1;
+var cScale = 1; // set later
+var simWidth = 1;
+resizeCanvas();
+window.addEventListener('resize', resizeCanvas);
+
+function cX(x) { return x * cScale; }
+function cY(y) { return canvas.height - y * cScale; }
+
+/* -------------------- Fluid class (unchanged) -------------------- */
+var U_FIELD = 0, V_FIELD = 1, S_FIELD = 2;
+
+class Fluid {
+            constructor(density, numX, numY, h) {
+                this.density = density;
+                this.numX = numX + 2; this.numY = numY + 2; this.numCells = this.numX * this.numY;
+                this.h = h;
+                this.u = new Float32Array(this.numCells);
+                this.v = new Float32Array(this.numCells);
+                this.newU = new Float32Array(this.numCells);
+                this.newV = new Float32Array(this.numCells);
+                this.p = new Float32Array(this.numCells);
+                this.s = new Float32Array(this.numCells);
+                this.m = new Float32Array(this.numCells);
+                this.newM = new Float32Array(this.numCells);
+                this.m.fill(1.0);
+            }
+            integrate(dt, gravity) {
+                var n = this.numY;
+                for (var i = 1; i < this.numX; i++) {
+                    for (var j = 1; j < this.numY - 1; j++) {
+                        if (this.s[i * n + j] != 0.0 && this.s[i * n + j - 1] != 0.0)
+                            this.v[i * n + j] += gravity * dt;
+                    }
+                }
+            }
+            solveIncompressibility(numIters, dt) {
+                var n = this.numY; var cp = this.density * this.h / dt;
+                for (var iter = 0; iter < numIters; iter++) {
+                    for (var i = 1; i < this.numX - 1; i++) {
+                        for (var j = 1; j < this.numY - 1; j++) {
+                            if (this.s[i * n + j] == 0.0) continue;
+                            var s = this.s[i * n + j];
+                            var sx0 = this.s[(i - 1) * n + j], sx1 = this.s[(i + 1) * n + j], sy0 = this.s[i * n + j - 1], sy1 = this.s[i * n + j + 1];
+                            var sTotal = sx0 + sx1 + sy0 + sy1;
+                            if (sTotal == 0.0) continue;
+                            var div = this.u[(i + 1) * n + j] - this.u[i * n + j] + this.v[i * n + j + 1] - this.v[i * n + j];
+                            var p = -div / sTotal;
+                            p *= scene.overRelaxation;
+                            this.p[i * n + j] += cp * p;
+                            this.u[i * n + j] -= sx0 * p; this.u[(i + 1) * n + j] += sx1 * p;
+                            this.v[i * n + j] -= sy0 * p; this.v[i * n + j + 1] += sy1 * p;
+                        }
+                    }
+                }
+            }
+            extrapolate() {
+                var n = this.numY;
+                for (var i = 0; i < this.numX; i++) {
+                    this.u[i * n + 0] = this.u[i * n + 1];
+                    this.u[i * n + this.numY - 1] = this.u[i * n + this.numY - 2];
+                }
+                for (var j = 0; j < this.numY; j++) {
+                    this.v[0 * n + j] = this.v[1 * n + j];
+                    this.v[(this.numX - 1) * n + j] = this.v[(this.numX - 2) * n + j];
+                }
+            }
+            sampleField(x, y, field) {
+                var n = this.numY, h = this.h, h2 = 0.5 * h;
+                x = Math.max(Math.min(x, this.numX * h), h);
+                y = Math.max(Math.min(y, this.numY * h), h);
+                var dx = 0, dy = 0, f;
+                switch (field) { case U_FIELD: f = this.u; dy = h2; break; case V_FIELD: f = this.v; dx = h2; break; case S_FIELD: f = this.m; dx = h2; dy = h2; break; }
+                var x0 = Math.min(Math.floor((x - dx) * 1 / h), this.numX - 1), x1 = Math.min(x0 + 1, this.numX - 1);
+                var y0 = Math.min(Math.floor((y - dy) * 1 / h), this.numY - 1), y1 = Math.min(y0 + 1, this.numY - 1);
+                var tx = (x - dx - x0 * h) / h, ty = (y - dy - y0 * h) / h;
+                var sx = 1 - tx, sy = 1 - ty;
+                return sx * sy * f[x0 * n + y0] + tx * sy * f[x1 * n + y0] + tx * ty * f[x1 * n + y1] + sx * ty * f[x0 * n + y1];
+            }
+            avgU(i, j) { var n = this.numY; return (this.u[i * n + j - 1] + this.u[i * n + j] + this.u[(i + 1) * n + j - 1] + this.u[(i + 1) * n + j]) * 0.25; }
+            avgV(i, j) { var n = this.numY; return (this.v[(i - 1) * n + j] + this.v[i * n + j] + this.v[(i - 1) * n + j + 1] + this.v[i * n + j + 1]) * 0.25; }
+            advectVel(dt) {
+                this.newU.set(this.u); this.newV.set(this.v);
+                var n = this.numY, h = this.h, h2 = 0.5 * h;
+                for (var i = 1; i < this.numX; i++) {
+                    for (var j = 1; j < this.numY; j++) {
+                        if (this.s[i * n + j] != 0.0 && this.s[(i - 1) * n + j] != 0.0 && j < this.numY - 1) {
+                            var x = i * h, y = j * h + h2, u = this.u[i * n + j], v = this.avgV(i, j);
+                            x -= dt * u; y -= dt * v;
+                            u = this.sampleField(x, y, U_FIELD); this.newU[i * n + j] = u;
+                        }
+                        if (this.s[i * n + j] != 0.0 && this.s[i * n + j - 1] != 0.0 && i < this.numX - 1) {
+                            var x = i * h + h2, y = j * h, u = this.avgU(i, j), v = this.v[i * n + j];
+                            x -= dt * u; y -= dt * v; v = this.sampleField(x, y, V_FIELD); this.newV[i * n + j] = v;
+                        }
+                    }
+                }
+                this.u.set(this.newU); this.v.set(this.newV);
+            }
+            advectSmoke(dt) {
+                this.newM.set(this.m);
+                var n = this.numY, h = this.h, h2 = 0.5 * h;
+                for (var i = 1; i < this.numX - 1; i++) {
+                    for (var j = 1; j < this.numY - 1; j++) {
+                        if (this.s[i * n + j] != 0.0) {
+                            var u = (this.u[i * n + j] + this.u[(i + 1) * n + j]) * 0.5;
+                            var v = (this.v[i * n + j] + this.v[i * n + j + 1]) * 0.5;
+                            var x = i * h + h2 - dt * u, y = j * h + h2 - dt * v;
+                            this.newM[i * n + j] = this.sampleField(x, y, S_FIELD);
+                        }
+                    }
+                }
+                this.m.set(this.newM);
+            }
+            simulate(dt, gravity, numIters) { this.integrate(dt, gravity); this.p.fill(0); this.solveIncompressibility(numIters, dt); this.extrapolate(); this.advectVel(dt); this.advectSmoke(dt); }
+}
+
+/* -------------------- Scene -------------------- */
+var scene = {
+            gravity: -9.81, dt: 1 / 120, numIters: 100, frameNr: 0, overRelaxation: 1.9,
+            obstacleX: 0.4, obstacleY: 0.5, obstacleRadius: 0.15, obstacleAngle: 0,
+            paused: false, sceneNr: 0,
+            showObstacle: false, showStreamlines: false, showVelocities: false, showPressure: false, showSmoke: true,
+            fluid: null, obstacleShape: 'circle',
+            // airfoil parameters (NACA style)
+            airfoil: { m: 0.02, p: 0.4, t: 0.12 } // camber fraction, camber position, thickness fraction
+};
+
+/* -------------------- Setup scenes -------------------- */
+function setupScene(sceneNr = 0) {
+            scene.sceneNr = sceneNr; scene.obstacleRadius = 0.15; scene.overRelaxation = 1.9;
+            scene.dt = 1 / 60; scene.numIters = 40;
+            var res = 100; if (sceneNr == 0) res = 50; else if (sceneNr == 3) res = 200;
+            var domainHeight = 1.0, domainWidth = domainHeight / simHeight * simWidth;
+            var h = domainHeight / res, numX = Math.floor(domainWidth / h), numY = Math.floor(domainHeight / h);
+            var density = 1000.0;
+            var f = scene.fluid = new Fluid(density, numX, numY, h);
+            var n = f.numY;
+
+            // set inflow from slider
+            var inVel = parseFloat(document.getElementById("flowSlider").value) || 2.0;
+
+            if (sceneNr == 0) { // tank
+                for (var i = 0; i < f.numX; i++) {
+                    for (var j = 0; j < f.numY; j++) {
+                        var s = 1.0; if (i == 0 || i == f.numX - 1 || j == 0) s = 0.0; f.s[i * n + j] = s;
+                    }
+                }
+                scene.gravity = -9.81; scene.showPressure = true; scene.showSmoke = false; scene.showStreamlines = false; scene.showVelocities = false;
+            } else if (sceneNr == 1 || sceneNr == 3) { // vortex shedding tunnel
+                for (var i = 0; i < f.numX; i++) {
+                    for (var j = 0; j < f.numY; j++) {
+                        var s = 1.0; if (i == 0 || j == 0 || j == f.numY - 1) s = 0.0; f.s[i * n + j] = s;
+                        if (i == 1) f.u[i * n + j] = inVel;
+                    }
+                }
+                // small wake initialization
+                var pipeH = 0.1 * f.numY;
+                var minJ = Math.floor(0.5 * f.numY - 0.5 * pipeH), maxJ = Math.floor(0.5 * f.numY + 0.5 * pipeH);
+                for (var j = minJ; j < maxJ; j++) f.m[j] = 0.0;
+                setObstacle(0.4, 0.5, true);
+                scene.gravity = 0; scene.showPressure = false; scene.showSmoke = true; scene.showStreamlines = false; scene.showVelocities = false;
+                if (sceneNr == 3) { scene.dt = 1 / 120; scene.numIters = 100; scene.showPressure = true; }
+            } else if (sceneNr == 2) { // paint
+                scene.gravity = 0; scene.overRelaxation = 1.0; scene.showPressure = false; scene.showSmoke = true; scene.showStreamlines = false; scene.showVelocities = false; scene.obstacleRadius = 0.1;
+            }
+
+            // ensure left boundary inflow matches slider
+            for (let j = 1; j < f.numY - 1; j++) f.u[1 * f.numY + j] = inVel;
+
+            document.getElementById("streamButton").checked = scene.showStreamlines;
+            document.getElementById("velocityButton").checked = scene.showVelocities;
+            document.getElementById("pressureButton").checked = scene.showPressure;
+            document.getElementById("smokeButton").checked = scene.showSmoke;
+            document.getElementById("overrelaxButton").checked = scene.overRelaxation > 1.0;
+}
+
+/* -------------------- Flow slider -------------------- */
+const flowSlider = document.getElementById("flowSlider");
+const flowValue = document.getElementById("flowValue");
+flowSlider.addEventListener('input', (e) => {
+            let speed = parseFloat(e.target.value);
+            flowValue.innerText = speed.toFixed(1);
+            if (scene.fluid) {
+                let f = scene.fluid;
+                for (let j = 1; j < f.numY - 1; j++) {
+                    f.u[1 * f.numY + j] = speed; // set inflow on left boundary
+                }
+            }
+});
+
+/* -------------------- set shape helpers -------------------- */
+function setShape(shape) {
+            scene.obstacleShape = shape;
+            // update radio group UI to match
+            let radios = document.getElementsByName('shape');
+            for (let r of radios) r.checked = (r.value == shape);
+            // recompute obstacle map
+            if (scene.fluid) setObstacle(scene.obstacleX, scene.obstacleY, true);
+}
+
+// wire radio buttons so they work
+document.querySelectorAll('input[name="shape"]').forEach(el => {
+            el.addEventListener('change', (e) => { setShape(e.target.value); });
+});
+
+// wire airfoil param inputs
+document.getElementById('camberInput').addEventListener('input', (e) => {
+            scene.airfoil.m = parseFloat(e.target.value) || 0.0;
+            if (scene.fluid) setObstacle(scene.obstacleX, scene.obstacleY, true);
+});
+document.getElementById('camberPosInput').addEventListener('input', (e) => {
+            scene.airfoil.p = parseFloat(e.target.value) || 0.4;
+            if (scene.fluid) setObstacle(scene.obstacleX, scene.obstacleY, true);
+});
+document.getElementById('thicknessInput').addEventListener('input', (e) => {
+            scene.airfoil.t = parseFloat(e.target.value) || 0.12;
+            if (scene.fluid) setObstacle(scene.obstacleX, scene.obstacleY, true);
+});
+
+/* -------------------- obstacle placement and shapes -------------------- */
+function setObstacle(x, y, reset) {
+            var vx = 0, vy = 0;
+            if (!reset) {
+                vx = (x - scene.obstacleX) / scene.dt;
+                vy = (y - scene.obstacleY) / scene.dt;
+            }
+            scene.obstacleX = x; scene.obstacleY = y;
+
+            var f = scene.fluid, n = f.numY;
+            var r = scene.obstacleRadius;
+
+            let cosA = Math.cos(scene.obstacleAngle);
+            let sinA = Math.sin(scene.obstacleAngle);
+
+            // initialize all cells to fluid before marking obstacle
+            for (var i = 1; i < f.numX - 1; i++) {
+                for (var j = 1; j < f.numY - 1; j++) {
+                    f.s[i * n + j] = 1.0;
+                }
+            }
+
+            // Airfoil calculation: NACA-style thickness + camber (on chord from -chord/2 to chord/2)
+            var chord = 2 * r;
+            var m = scene.airfoil.m; // max camber (fraction)
+            var p = scene.airfoil.p; // camber position (fraction)
+            var t = scene.airfoil.t; // thickness fraction
+
+            for (var i = 1; i < f.numX - 2; i++) {
+                for (var j = 1; j < f.numY - 2; j++) {
+
+                    // cell center in world space relative to obstacle center
+                    var dx = (i + 0.5) * f.h - x;
+                    var dy = (j + 0.5) * f.h - y;
+
+                    // rotate into obstacle local coordinates (lx along chord axis)
+                    var lx = dx * cosA + dy * sinA;
+                    var ly = -dx * sinA + dy * cosA;
+
+                    var inside = false;
+                    switch (scene.obstacleShape) {
+                        case 'circle':
+                            inside = (lx * lx + ly * ly < r * r);
+                            break;
+                        case 'rect':
+                            inside = (Math.abs(lx) < r && Math.abs(ly) < r);
+                            break;
+                        case 'triangle':
+                            inside = (ly >= -r / 2 && lx >= -r / 2 && (lx + ly) < r / 1.2);
+                            break;
+                        case 'airfoil':
+                            // Only consider points inside chord span
+                            if (lx > -chord / 2 && lx < chord / 2) {
+                                // normalize x along chord to [0,1]
+                                var x_c = (lx + chord / 2) / chord;
+                                // thickness distribution (NACA 4-digit thickness equation, half-thickness)
+                                // y_t = 5*t*(0.2969*sqrt(x) - 0.1260*x -0.3516*x^2 +0.2843*x^3 -0.1015*x^4)
+                                var xt = Math.max(0, Math.min(1, x_c));
+                                var yt = 5.0 * t * (0.2969 * Math.sqrt(xt) - 0.1260 * xt - 0.3516 * Math.pow(xt, 2) + 0.2843 * Math.pow(xt, 3) - 0.1015 * Math.pow(xt, 4));
+                                // camber line yc
+                                var yc = 0;
+                                if (m > 1e-6) {
+                                    if (xt < p) {
+                                        yc = (m / (p * p)) * (2 * p * xt - xt * xt);
+                                    } else {
+                                        yc = (m / ((1 - p) * (1 - p))) * ((1 - 2 * p) + 2 * p * xt - xt * xt);
+                                    }
+                                }
+                                // convert yc, yt from chord fraction to length units
+                                var yc_phys = yc * chord;
+                                var yt_phys = yt * chord;
+                                // decide if point is within airfoil (between upper and lower surface)
+                                // note ly is local vertical coordinate
+                                if (ly >= (yc_phys - yt_phys) && ly <= (yc_phys + yt_phys)) inside = true;
+                            }
+                            break;
+                    }
+
+                    if (inside) {
+                        f.s[i * n + j] = 0.0;
+                        f.m[i * n + j] = scene.sceneNr == 2 ? 0.5 + 0.5 * Math.sin(0.1 * scene.frameNr) : 1.0;
+                        f.u[i * n + j] = vx; f.u[(i + 1) * n + j] = vx;
+                        f.v[i * n + j] = vy; f.v[i * n + j + 1] = vy;
+                    }
+                }
+            }
+
+            scene.showObstacle = true;
+}
+
+/* -------------------- mouse/touch interaction -------------------- */
+var mouseDown = false;
+function startDrag(x, y) {
+            let bounds = canvas.getBoundingClientRect();
+            let mx = x - bounds.left - canvas.clientLeft, my = y - bounds.top - canvas.clientTop;
+            mouseDown = true;
+            setObstacle(mx / cScale, (canvas.height - my) / cScale, true);
+}
+function drag(x, y) {
+            if (mouseDown) {
+                let bounds = canvas.getBoundingClientRect();
+                setObstacle((x - bounds.left - canvas.clientLeft) / cScale,
+                    (canvas.height - (y - bounds.top - canvas.clientTop)) / cScale,
+                    false);
+            }
+}
+function endDrag() { mouseDown = false; }
+
+canvas.addEventListener('mousedown', e => startDrag(e.clientX, e.clientY));
+canvas.addEventListener('mouseup', e => endDrag());
+canvas.addEventListener('mousemove', e => drag(e.clientX, e.clientY));
+canvas.addEventListener('touchstart', e => startDrag(e.touches[0].clientX, e.touches[0].clientY));
+canvas.addEventListener('touchend', e => endDrag());
+canvas.addEventListener('touchmove', e => { e.preventDefault(); drag(e.touches[0].clientX, e.touches[0].clientY); }, { passive: false });
+
+document.addEventListener('keydown', e => {
+            if (e.key == 'p') scene.paused = !scene.paused;
+            if (e.key == 'm') { scene.paused = false; simulate(); scene.paused = true; }
+            if (e.key == '[') { scene.obstacleAngle -= Math.PI / 18; if (scene.fluid) setObstacle(scene.obstacleX, scene.obstacleY, true); }
+            if (e.key == ']') { scene.obstacleAngle += Math.PI / 18; if (scene.fluid) setObstacle(scene.obstacleX, scene.obstacleY, true); }
+});
+
+/* -------------------- simulation loop -------------------- */
+function simulate() { if (!scene.paused) scene.fluid.simulate(scene.dt, scene.gravity, scene.numIters); scene.frameNr++; }
+
+function draw() {
+            c.clearRect(0, 0, canvas.width, canvas.height);
+            var f = scene.fluid, n = f.numY;
+            // draw cells by mapping grid to image data for speed
+            var id = c.getImageData(0, 0, canvas.width, canvas.height);
+            var minP = Math.min(...f.p), maxP = Math.max(...f.p);
+            for (var i = 0; i < f.numX; i++) {
+                for (var j = 0; j < f.numY; j++) {
+                    var color = [255, 255, 255, 255];
+                    if (scene.showPressure) { var p = f.p[i * n + j]; var s = f.m[i * n + j]; color = [...getSciColor(p, minP, maxP)]; if (scene.showSmoke) { color[0] = Math.max(0, color[0] - 255 * s); color[1] = Math.max(0, color[1] - 255 * s); color[2] = Math.max(0, color[2] - 255 * s); } }
+                    else if (scene.showSmoke) { var s = f.m[i * n + j]; color = [255 * s, 255 * s, 255 * s, 255]; if (scene.sceneNr == 2) color = [...getSciColor(s, 0, 1)]; }
+                    else if (f.s[i * n + j] == 0) color = [0, 0, 0, 255];
+
+                    var x = Math.floor(cX(i * f.h)), y = Math.floor(cY((j + 1) * f.h)), cx = Math.floor(cScale * 1.1 * f.h) + 1, cy = cx;
+                    for (var yi = y; yi < y + cy && yi < canvas.height; yi++) { var p = 4 * (yi * canvas.width + x); for (var xi = 0; xi < cx && x + xi < canvas.width; xi++) { if (p + 3 < id.data.length) { id.data[p++] = color[0]; id.data[p++] = color[1]; id.data[p++] = color[2]; id.data[p++] = 255; } } }
+                }
+            }
+            c.putImageData(id, 0, 0);
+
+            // optional: draw obstacle outline for clarity
+            if (scene.showObstacle) {
+                c.save();
+                c.translate(cX(scene.obstacleX), cY(scene.obstacleY));
+                c.rotate(-scene.obstacleAngle); // note canvas Y is flipped
+                c.strokeStyle = 'rgba(255,255,255,0.6)';
+                c.lineWidth = 1.2;
+                if (scene.obstacleShape === 'circle') {
+                    c.beginPath(); c.arc(0, 0, scene.obstacleRadius * cScale, 0, Math.PI * 2); c.stroke();
+                } else if (scene.obstacleShape === 'rect') {
+                    c.strokeRect(-scene.obstacleRadius * cScale, -scene.obstacleRadius * cScale, 2 * scene.obstacleRadius * cScale, 2 * scene.obstacleRadius * cScale);
+                } else if (scene.obstacleShape === 'airfoil') {
+                    // draw simple airfoil outline from approximate coordinates (for visual guidance)
+                    var chord = 2 * scene.obstacleRadius;
+                    var steps = 60;
+                    c.beginPath();
+                    for (var k = 0; k <= steps; k++) {
+                        var xc = k / steps;
+                        // thickness distribution
+                        var yt = 5.0 * scene.airfoil.t * (0.2969 * Math.sqrt(xc) - 0.1260 * xc - 0.3516 * xc * xc + 0.2843 * Math.pow(xc, 3) - 0.1015 * Math.pow(xc, 4));
+                        var yc = 0;
+                        if (scene.airfoil.m > 1e-6) {
+                            var p = scene.airfoil.p;
+                            if (xc < p) yc = (scene.airfoil.m / (p * p)) * (2 * p * xc - xc * xc);
+                            else yc = (scene.airfoil.m / ((1 - p) * (1 - p))) * ((1 - 2 * p) + 2 * p * xc - xc * xc);
+                        }
+                        var x_draw = (xc - 0.5) * chord * cScale;
+                        var y_draw = (yc + yt - 0.0) * chord * cScale; // upper surface
+                        if (k == 0) c.moveTo(x_draw, -y_draw);
+                        else c.lineTo(x_draw, -y_draw);
+                    }
+                    for (var k = steps; k >= 0; k--) {
+                        var xc = k / steps;
+                        var yt = 5.0 * scene.airfoil.t * (0.2969 * Math.sqrt(xc) - 0.1260 * xc - 0.3516 * xc * xc + 0.2843 * Math.pow(xc, 3) - 0.1015 * Math.pow(xc, 4));
+                        var yc = 0;
+                        if (scene.airfoil.m > 1e-6) {
+                            var p = scene.airfoil.p;
+                            if (xc < p) yc = (scene.airfoil.m / (p * p)) * (2 * p * xc - xc * xc);
+                            else yc = (scene.airfoil.m / ((1 - p) * (1 - p))) * ((1 - 2 * p) + 2 * p * xc - xc * xc);
+                        }
+                        var x_draw = (xc - 0.5) * chord * cScale;
+                        var y_draw = (yc - yt) * chord * cScale; // lower surface
+                        c.lineTo(x_draw, -y_draw);
+                    }
+                    c.closePath();
+                    c.stroke();
+                }
+                c.restore();
+            }
+}
+
+function computeResults() {
+            let f = scene.fluid, n = f.numY;
+            let totalSpeed = 0, count = 0;
+            for (let i = 1; i < f.numX - 1; i++) {
+                for (let j = 1; j < f.numY - 1; j++) {
+                    let u = f.u[i * n + j], v = f.v[i * n + j];
+                    totalSpeed += Math.sqrt(u * u + v * v);
+                    count++;
+                }
+            }
+            let avgSpeed = totalSpeed / count;
+            let drag = 0;
+            for (let i = 1; i < f.numX - 1; i++) {
+                for (let j = 1; j < f.numY - 1; j++) {
+                    if (f.s[i * n + j] === 0) { drag += Math.abs(f.u[i * n + j]); }
+                }
+            }
+            document.getElementById("frameCount").innerText = `Frame: ${scene.frameNr}`;
+            document.getElementById("avgSpeed").innerText = `Avg Speed: ${avgSpeed.toFixed(2)}`;
+            document.getElementById("dragForce").innerText = `Drag Force: ${drag.toFixed(2)}`;
+}
+
+function getSciColor(val, minVal, maxVal) {
+            val = Math.min(Math.max(val, minVal), maxVal - 0.0001); var d = maxVal - minVal; val = d == 0 ? 0.5 : (val - minVal) / d;
+            var m = 0.25, num = Math.floor(val / m), s = (val - num * m) / m, r, g, b;
+            switch (num) { case 0: r = 0; g = s; b = 1; break; case 1: r = 0; g = 1; b = 1 - s; break; case 2: r = s; g = 1; b = 0; break; case 3: r = 1; g = 1 - s; b = 0; break; }
+            return [255 * r, 255 * g, 255 * b, 255];
+}
+
+/* -------------------- animation -------------------- */
+function update() {
+            simulate();
+            draw();
+            computeResults();
+            requestAnimationFrame(update);
+}
+
+/* -------------------- initial setup/start -------------------- */
+setupScene(1);
+// initial obstacle placement in center of domain
+setObstacle(0.4, 0.5, true);
+
+update();
+
+    </script>
+</body>
+</html>
