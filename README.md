@@ -20,6 +20,7 @@ Adjustable parameters
 
 Downloadable source code for experimentation
 
+🌐 **Visit the live site:** [Interactive Science Simulations](https://ishayyu.github.io/Interactive-Science-Simulations/)
 Usage:
 Clone or download the repository and open index.html in your browser to access all simulations directly—no server required.
 
