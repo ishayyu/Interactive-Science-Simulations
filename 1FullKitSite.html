@@ -1,0 +1,232 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Interactive Science Simulations</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        body {
+            margin: 0;
+            font-family: sans-serif;
+            background: #0c0f18;
+            color: #e6eef6;
+        }
+
+        header {
+            background: #1777ff;
+            color: white;
+            padding: 12px 20px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+            header h1 {
+                margin: 0;
+                font-size: 24px;
+            }
+
+        nav a {
+            color: white;
+            margin-left: 20px;
+            text-decoration: none;
+            font-weight: bold;
+        }
+
+            nav a:hover {
+                text-decoration: underline;
+            }
+
+        .container {
+            padding: 20px;
+            max-width: 1200px;
+            margin: auto;
+        }
+
+        .sim-section {
+            margin-bottom: 50px;
+        }
+
+            .sim-section h2 {
+                color: #44e7ff;
+            }
+
+            .sim-section canvas {
+                width: 100%;
+                max-width: 700px;
+                height: 400px;
+                display: block;
+                background: #0c0f18;
+                margin-bottom: 10px;
+            }
+
+            .sim-section img {
+                max-width: 300px;
+                display: block;
+                margin-bottom: 10px;
+                border-radius: 6px;
+                border: 1px solid #333;
+            }
+
+            .sim-section pre {
+                background: #1a1f2b;
+                padding: 12px;
+                overflow-x: auto;
+                border-radius: 6px;
+            }
+
+            .sim-section a.button {
+                display: inline-block;
+                margin-top: 6px;
+                padding: 6px 12px;
+                background: #1777ff;
+                color: white;
+                text-decoration: none;
+                border-radius: 6px;
+            }
+
+                .sim-section a.button:hover {
+                    background: #0f5ac9;
+                }
+
+        footer {
+            text-align: center;
+            padding: 20px;
+            background: #11151f;
+            color: #888;
+            font-size: 14px;
+            margin-top: 50px;
+        }
+    </style>
+</head>
+<body>
+
+    <header>
+        <h1>Interactive Science Simulations</h1>
+        <nav>
+            <a href="#cfd">CFD</a>
+            <a href="#blackhole">Black Hole</a>
+            <a href="#rocket">Rocket Launch</a>
+            <a href="#pendulum">Double Pendulum</a>
+            <a href="#solar">Solar System</a>
+        </nav>
+    </header>
+
+    <div class="container">
+        <h2>Welcome</h2>
+        <p>Explore interactive physics and engineering simulations. Each simulation lets you change parameters, see real-time results, and download the code.</p>
+
+        <!-- CFD -->
+        <div class="sim-section" id="cfd">
+            <h2>Computational Fluid Dynamics (CFD)</h2>
+            <canvas id="cfdCanvas"></canvas>
+            <p>This simulation models fluid flow using a 2D Eulerian method. Adjust parameters like viscosity and source strength to see how fluids move around obstacles.</p>
+            <pre>// Example: fluid velocity update
+u[x][y] += dt * (diffusion + advection);</pre>
+            <img src="fluiddynamicssimscreenshot.png" alt="CFD Simulation Screenshot">
+            <a class="button" href="cfdsigma.html" download>Download CFD Simulation</a>
+        </div>
+
+        <!-- Black Hole -->
+        <div class="sim-section" id="blackhole">
+            <h2>2D Black Hole Gravity</h2>
+            <canvas id="blackholeCanvas"></canvas>
+            <p>Simulate particle motion under a central gravitational force. Observe how particles spiral into the black hole and how gravity affects trajectories.</p>
+            <pre>// Force from black hole
+fx = -G * M * (x - bx) / r**3;
+fy = -G * M * (y - by) / r**3;</pre>
+            <img src="blackholesimscreenshot.png" alt="Black Hole Simulation Screenshot">
+            <a class="button" href="2dblackhole.html" download>Download Black Hole Simulation</a>
+        </div>
+
+        <!-- Rocket Launch -->
+        <div class="sim-section" id="rocket">
+            <h2>2D Rocket Launch</h2>
+            <canvas id="rocketCanvas"></canvas>
+            <p>Launch a rocket and explore the effects of thrust, drag, gravity, and launch angle. Trails and telemetry provide real-time feedback on speed and altitude.</p>
+            <pre>// Net forces
+fx = thrust*cos(angle) - drag*vx*vmag;
+fy = thrust*sin(angle) - drag*vy*vmag - mass*gravity;</pre>
+            <img src="rocketlaunchsimscreenshot.png" alt="Rocket Launch Simulation Screenshot">
+            <a class="button" href="RocketLaunch.html" download>Download Rocket Simulation</a>
+        </div>
+
+        <!-- Double Pendulum -->
+        <div class="sim-section" id="pendulum">
+            <h2>Double Pendulum</h2>
+            <canvas id="pendulumCanvas"></canvas>
+            <p>This simulation demonstrates chaotic motion in a double pendulum. Adjust rod lengths, bob masses, and gravity to explore different dynamics.</p>
+            <pre>// Acceleration calculations
+a1_acc = ...; 
+a2_acc = ...;
+a1_v += a1_acc*dt;
+a2_v += a2_acc*dt;</pre>
+            <img src="doublependulumsimscreenshot.png" alt="Double Pendulum Simulation Screenshot">
+            <a class="button" href="doublependulumsim.html" download>Download Double Pendulum</a>
+        </div>
+
+        <!-- Solar System -->
+        <div class="sim-section" id="solar">
+            <h2>Solar System</h2>
+            <canvas id="solarCanvas"></canvas>
+            <p>Simulate planetary orbits around a central star. You can change planetary masses, initial velocities, and observe how orbits evolve over time.</p>
+            <pre>// Gravitational acceleration
+ax = -G*M*dx/r**3;
+ay = -G*M*dy/r**3;</pre>
+            <img src="solarsystemsimscreenshot.png" alt="Solar System Simulation Screenshot">
+            <a class="button" href="SolarSystem3D.html" download>Download Solar System Simulation</a>
+        </div>
+
+        <!-- GitHub Link -->
+        <div class="container" style="text-align:center; margin-bottom:20px;">
+            <a class="button" href="https://github.com/ishayyu/Interactive-Science-Simulations" target="_blank">
+                View on GitHub
+            </a>
+        </div>
+
+    </div>
+
+    <footer>
+        &copy; 2025 Ishayyu Jha | Interactive Science Simulations
+    </footer>
+
+    <!-- JavaScript placeholders for your simulations -->
+    <script>
+        // CFD
+        const cfdCanvas = document.getElementById("cfdCanvas");
+        const cfdCtx = cfdCanvas.getContext("2d");
+        cfdCanvas.width = 700; cfdCanvas.height = 400;
+        function drawCFD() { cfdCtx.fillStyle = "#0c0f18"; cfdCtx.fillRect(0, 0, cfdCanvas.width, cfdCanvas.height); requestAnimationFrame(drawCFD); }
+        drawCFD();
+
+        // Black Hole
+        const bhCanvas = document.getElementById("blackholeCanvas");
+        const bhCtx = bhCanvas.getContext("2d");
+        bhCanvas.width = 700; bhCanvas.height = 400;
+        function drawBlackHole() { bhCtx.fillStyle = "#0c0f18"; bhCtx.fillRect(0, 0, bhCanvas.width, bhCanvas.height); requestAnimationFrame(drawBlackHole); }
+        drawBlackHole();
+
+        // Rocket
+        const rocketCanvas = document.getElementById("rocketCanvas");
+        const rocketCtx = rocketCanvas.getContext("2d");
+        rocketCanvas.width = 700; rocketCanvas.height = 400;
+        function drawRocket() { rocketCtx.fillStyle = "#0c0f18"; rocketCtx.fillRect(0, 0, rocketCanvas.width, rocketCanvas.height); requestAnimationFrame(drawRocket); }
+        drawRocket();
+
+        // Double Pendulum
+        const pendCanvas = document.getElementById("pendulumCanvas");
+        const pendCtx = pendCanvas.getContext("2d");
+        pendCanvas.width = 700; pendCanvas.height = 400;
+        function drawPendulum() { pendCtx.fillStyle = "#0c0f18"; pendCtx.fillRect(0, 0, pendCanvas.width, pendCanvas.height); requestAnimationFrame(drawPendulum); }
+        drawPendulum();
+
+        // Solar System
+        const solarCanvas = document.getElementById("solarCanvas");
+        const solarCtx = solarCanvas.getContext("2d");
+        solarCanvas.width = 700; solarCanvas.height = 400;
+        function drawSolar() { solarCtx.fillStyle = "#0c0f18"; solarCtx.fillRect(0, 0, solarCanvas.width, solarCanvas.height); requestAnimationFrame(drawSolar); }
+        drawSolar();
+    </script>
+
+</body>
+</html>
