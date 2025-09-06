@@ -1,0 +1,227 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>2D Rocket Launch Simulation</title>
+    <style>
+        body {
+            margin: 0;
+            background: #0c0f18;
+            color: #e6eef6;
+            font-family: sans-serif;
+        }
+
+        #ui {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            background: rgba(10,14,24,0.75);
+            padding: 12px;
+            border-radius: 10px;
+            font-size: 14px;
+        }
+
+        .row {
+            display: flex;
+            align-items: center;
+            margin: 4px 0;
+        }
+
+        label {
+            flex: 1;
+        }
+
+        input[type=range] {
+            flex: 2;
+        }
+
+        .val {
+            width: 40px;
+            text-align: right;
+        }
+
+        button {
+            margin-top: 6px;
+            margin-right: 6px;
+            padding: 4px 8px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            background: #1777ff;
+            color: white;
+        }
+
+        #telemetry {
+            margin-top: 6px;
+            line-height: 1.3;
+            font-size: 13px;
+        }
+
+        canvas {
+            display: block;
+            cursor: grab;
+        }
+
+            canvas:active {
+                cursor: grabbing;
+            }
+    </style>
+</head>
+<body>
+    <canvas id="sim"></canvas>
+
+    <div id="ui">
+        <div class="row"><label>Thrust</label><input id="thrust" type="range" min="0" max="20000" value="8000"><div class="val" id="thrustVal">8000</div></div>
+        <div class="row"><label>Mass</label><input id="mass" type="range" min="10" max="2000" value="120"><div class="val" id="massVal">120</div></div>
+        <div class="row"><label>Drag</label><input id="drag" type="range" min="0" max="1" step="0.01" value="0.05"><div class="val" id="dragVal">0.05</div></div>
+        <div class="row"><label>Angle (°)</label><input id="angle" type="range" min="0" max="90" value="75"><div class="val" id="angleVal">75</div></div>
+        <div class="row"><label>Gravity</label><input id="gravity" type="range" min="0.1" max="30" step="0.1" value="9.8"><div class="val" id="gravityVal">9.8</div></div>
+
+        <button id="launch">Launch</button>
+        <button id="reset">Reset</button>
+        <button id="pause">Pause</button>
+
+        <div id="telemetry">
+            <div>Time: <span id="t">0.00</span> s</div>
+            <div>Altitude: <span id="alt">0.00</span> m</div>
+            <div>Speed: <span id="spd">0.00</span> m/s</div>
+        </div>
+    </div>
+
+    <script>
+const canvas = document.getElementById("sim");
+const ctx = canvas.getContext("2d");
+resize();
+window.addEventListener("resize", resize);
+function resize() { canvas.width = window.innerWidth; canvas.height = window.innerHeight; }
+
+// UI sliders
+const sliders = ["thrust", "mass", "drag", "angle", "gravity"];
+sliders.forEach(id => {
+            const el = document.getElementById(id);
+            const val = document.getElementById(id + "Val");
+            el.oninput = () => val.textContent = el.value;
+});
+
+// Simulation state
+let state;
+function resetSim() {
+            state = {
+                launched: false, paused: false, t: 0,
+                pos: { x: 100, y: canvas.height - 50 },
+                vel: { x: 0, y: 0 },
+                trail: []
+            };
+}
+resetSim();
+
+// Buttons
+document.getElementById("launch").onclick = () => { if (!state.launched) { state.launched = true; state.t = 0; } };
+document.getElementById("reset").onclick = () => resetSim();
+document.getElementById("pause").onclick = () => { state.paused = !state.paused; document.getElementById("pause").textContent = state.paused ? "Resume" : "Pause"; };
+
+// Camera state
+let zoom = 1;
+let camX = 0, camY = 0;
+let isDragging = false;
+let dragStart = { x: 0, y: 0 };
+canvas.addEventListener("wheel", e => {
+            e.preventDefault();
+            const mx = (e.offsetX - camX) / zoom;
+            const my = (e.offsetY - camY) / zoom;
+            zoom *= e.deltaY < 0 ? 1.1 : 1 / 1.1;
+            zoom = Math.min(Math.max(zoom, 0.1), 5);
+            camX = e.offsetX - mx * zoom;
+            camY = e.offsetY - my * zoom;
+}, { passive: false });
+canvas.addEventListener("mousedown", e => { isDragging = true; dragStart = { x: e.clientX - camX, y: e.clientY - camY }; });
+canvas.addEventListener("mousemove", e => { if (isDragging) { camX = e.clientX - dragStart.x; camY = e.clientY - dragStart.y; } });
+canvas.addEventListener("mouseup", () => { isDragging = false; });
+canvas.addEventListener("mouseleave", () => { isDragging = false; });
+
+// Physics
+function step(dt) {
+            if (!state.launched) return;
+            const thrust = +document.getElementById("thrust").value;
+            const mass = +document.getElementById("mass").value;
+            const dragC = +document.getElementById("drag").value;
+            const ang = (+document.getElementById("angle").value) * Math.PI / 180;
+            const g = +document.getElementById("gravity").value;
+
+            const fx = Math.cos(ang) * thrust;
+            const fy = -Math.sin(ang) * thrust;
+            const fgy = mass * g;
+            const vmag = Math.hypot(state.vel.x, state.vel.y);
+            const fdx = -dragC * vmag * state.vel.x;
+            const fdy = -dragC * vmag * state.vel.y;
+
+            const fxnet = fx + fdx;
+            const fynet = fy + fdy - fgy;
+
+            const ax = fxnet / mass;
+            const ay = fynet / mass;
+
+            state.vel.x += ax * dt;
+            state.vel.y += ay * dt;
+            state.pos.x += state.vel.x * dt;
+            state.pos.y += state.vel.y * dt;
+
+            if (state.pos.y > canvas.height - 50) { state.pos.y = canvas.height - 50; state.vel.y = 0; }
+
+            state.trail.push({ x: state.pos.x, y: state.pos.y });
+            if (state.trail.length > 800) state.trail.shift();
+
+            state.t += dt;
+}
+
+// Draw
+function draw() {
+            ctx.setTransform(zoom, 0, 0, zoom, camX, camY);
+
+            ctx.fillStyle = "#0c0f18";
+            ctx.fillRect(0, 0, canvas.width / zoom, canvas.height / zoom);
+
+            ctx.fillStyle = "#223";
+            ctx.fillRect(0, canvas.height / zoom - 40, canvas.width / zoom, 40);
+
+            ctx.strokeStyle = "#44e7ff";
+            ctx.beginPath();
+            state.trail.forEach((p, i) => { if (i === 0) ctx.moveTo(p.x, p.y); else ctx.lineTo(p.x, p.y); });
+            ctx.stroke();
+
+            ctx.save();
+            ctx.translate(state.pos.x, state.pos.y);
+            let angle = Math.atan2(state.vel.y, state.vel.x);
+            if (!isFinite(angle)) angle = -Math.PI / 2;
+            ctx.rotate(angle + Math.PI / 2);
+            ctx.fillStyle = "#eee";
+            ctx.fillRect(-5, -20, 10, 40);
+            ctx.fillStyle = "#f44";
+            ctx.beginPath();
+            ctx.moveTo(-5, -20); ctx.lineTo(5, -20); ctx.lineTo(0, -30); ctx.closePath();
+            ctx.fill();
+            if (state.launched) {
+                ctx.fillStyle = "orange";
+                ctx.beginPath();
+                ctx.moveTo(-4, 20); ctx.lineTo(4, 20); ctx.lineTo(0, 30 + Math.random() * 10); ctx.closePath();
+                ctx.fill();
+            }
+            ctx.restore();
+
+            document.getElementById("t").textContent = state.t.toFixed(2);
+            document.getElementById("alt").textContent = (canvas.height - 50 - state.pos.y).toFixed(2);
+            document.getElementById("spd").textContent = Math.hypot(state.vel.x, state.vel.y).toFixed(2);
+}
+
+// Loop
+let last = performance.now();
+function loop(now) {
+            const dt = (now - last) / 1000; last = now;
+            if (!state.paused) step(dt);
+            draw();
+            requestAnimationFrame(loop);
+}
+loop(last);
+    </script>
+</body>
+</html>
