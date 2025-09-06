@@ -1,0 +1,184 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Double Pendulum Simulation</title>
+    <style>
+        body {
+            margin: 0;
+            background: #0c0f18;
+            color: #e6eef6;
+            font-family: sans-serif;
+            overflow: hidden;
+        }
+
+        #ui {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            background: rgba(10,14,24,0.75);
+            padding: 12px;
+            border-radius: 10px;
+            font-size: 14px;
+        }
+
+        .row {
+            display: flex;
+            align-items: center;
+            margin: 4px 0;
+        }
+
+        label {
+            flex: 1;
+        }
+
+        input[type=range] {
+            flex: 2;
+        }
+
+        .val {
+            width: 40px;
+            text-align: right;
+        }
+
+        button {
+            margin-top: 6px;
+            margin-right: 6px;
+            padding: 4px 8px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            background: #1777ff;
+            color: white;
+        }
+
+        canvas {
+            display: block;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="sim"></canvas>
+
+    <div id="ui">
+        <div class="row"><label>Length 1</label><input id="l1" type="range" min="50" max="300" value="150"><div class="val" id="l1Val">150</div></div>
+        <div class="row"><label>Length 2</label><input id="l2" type="range" min="50" max="300" value="150"><div class="val" id="l2Val">150</div></div>
+        <div class="row"><label>Mass 1</label><input id="m1" type="range" min="1" max="50" value="10"><div class="val" id="m1Val">10</div></div>
+        <div class="row"><label>Mass 2</label><input id="m2" type="range" min="1" max="50" value="10"><div class="val" id="m2Val">10</div></div>
+        <div class="row"><label>Gravity</label><input id="g" type="range" min="0.1" max="20" step="0.1" value="9.8"><div class="val" id="gVal">9.8</div></div>
+        <button id="reset">Reset</button>
+    </div>
+
+    <script>
+const canvas = document.getElementById("sim");
+const ctx = canvas.getContext("2d");
+let width, height;
+function resize() { width = canvas.width = window.innerWidth; height = canvas.height = window.innerHeight; }
+window.addEventListener("resize", resize);
+resize();
+
+// UI sliders
+["l1", "l2", "m1", "m2", "g"].forEach(id => {
+            const el = document.getElementById(id);
+            const val = document.getElementById(id + "Val");
+            el.oninput = () => val.textContent = el.value;
+});
+
+// Pendulum state
+let state;
+function resetPendulum() {
+            state = {
+                a1: Math.PI / 2,
+                a2: Math.PI / 2,
+                a1_v: 0,
+                a2_v: 0,
+                trail: []
+            };
+}
+resetPendulum();
+document.getElementById("reset").onclick = () => { resetPendulum(); state.trail = []; };
+
+// Physics step
+function step(dt) {
+            const l1 = +document.getElementById("l1").value;
+            const l2 = +document.getElementById("l2").value;
+            const m1 = +document.getElementById("m1").value;
+            const m2 = +document.getElementById("m2").value;
+            const g = +document.getElementById("g").value;
+
+            const { a1, a2, a1_v, a2_v } = state;
+
+            const num1 = -g * (2 * m1 + m2) * Math.sin(a1);
+            const num2 = -m2 * g * Math.sin(a1 - 2 * a2);
+            const num3 = -2 * Math.sin(a1 - a2) * m2 * (a2_v * a2_v * l2 + a1_v * a1_v * l1 * Math.cos(a1 - a2));
+            const den = l1 * (2 * m1 + m2 - m2 * Math.cos(2 * a1 - 2 * a2));
+            const a1_a = (num1 + num2 + num3) / den;
+
+            const num4 = 2 * Math.sin(a1 - a2) * (a1_v * a1_v * l1 * (m1 + m2) + g * (m1 + m2) * Math.cos(a1) + a2_v * a2_v * l2 * m2 * Math.cos(a1 - a2));
+            const den2 = l2 * (2 * m1 + m2 - m2 * Math.cos(2 * a1 - 2 * a2));
+            const a2_a = num4 / den2;
+
+            state.a1_v += a1_a * dt;
+            state.a2_v += a2_a * dt;
+            state.a1 += state.a1_v * dt;
+            state.a2 += state.a2_v * dt;
+
+            // slight damping
+            state.a1_v *= 0.999;
+            state.a2_v *= 0.999;
+
+            const x1 = l1 * Math.sin(state.a1);
+            const y1 = l1 * Math.cos(state.a1);
+            const x2 = x1 + l2 * Math.sin(state.a2);
+            const y2 = y1 + l2 * Math.cos(state.a2);
+            state.trail.push({ x: x2, y: y2 });
+            if (state.trail.length > 1000) state.trail.shift();
+
+            state.pos = { x1, y1, x2, y2 };
+}
+
+// Draw
+function draw() {
+            ctx.setTransform(1, 0, 0, 1, 0, 0); // reset transform
+            ctx.fillStyle = "#0c0f18";
+            ctx.fillRect(0, 0, width, height);
+
+            // trail
+            ctx.strokeStyle = "#44e7ff";
+            ctx.beginPath();
+            state.trail.forEach((p, i) => { i === 0 ? ctx.moveTo(p.x + width / 2, p.y + 100) : ctx.lineTo(p.x + width / 2, p.y + 100); });
+            ctx.stroke();
+
+            // pendulum
+            const { x1, y1, x2, y2 } = state.pos;
+            const origin = { x: width / 2, y: 100 };
+            ctx.strokeStyle = "#eee";
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+            ctx.moveTo(origin.x, origin.y);
+            ctx.lineTo(origin.x + x1, origin.y + y1);
+            ctx.lineTo(origin.x + x2, origin.y + y2);
+            ctx.stroke();
+
+            ctx.fillStyle = "#f44";
+            ctx.beginPath();
+            ctx.arc(origin.x + x1, origin.y + y1, +document.getElementById("m1").value, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.beginPath();
+            ctx.arc(origin.x + x2, origin.y + y2, +document.getElementById("m2").value, 0, Math.PI * 2);
+            ctx.fill();
+}
+
+// Loop
+let last = performance.now();
+function loop(now) {
+            const dt = (now - last) / 1000; last = now;
+            // speed multiplier to make it faster
+            for (let i = 0; i < 5; i++) step(dt);
+            draw();
+            requestAnimationFrame(loop);
+}
+loop(last);
+    </script>
+</body>
+</html>
